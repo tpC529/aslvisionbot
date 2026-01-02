@@ -1,0 +1,186 @@
+# ASL Vision Bot Configuration
+
+# Camera Settings
+camera:
+  default_index: 0
+  width: 640
+  height: 480
+  fps: 30
+
+# Model Settings
+models:
+  # Basic gesture recognition
+  hand_landmarker: "hand_landmarker.task"
+  basic_model: "asl_model.h5"
+  actions_file: "actions.npy"
+  
+  # Advanced sequence recognition (to be trained)
+  sequence_model: "models/sequence_model.h5"
+  attention_model: "models/attention_model.h5"
+  
+  # Model architecture parameters
+  lstm_units: 128
+  attention_heads: 4
+  dropout_rate: 0.3
+  sequence_length: 30  # Number of frames in sequence
+  
+# Dataset Settings
+datasets:
+  # Kaggle datasets
+  kaggle:
+    enabled: false  # Enable when datasets are downloaded
+    path: "datasets/kaggle/"
+    types:
+      - "asl_alphabet"
+      - "asl_mnist"
+      - "asl_citizen"
+  
+  # How2Sign dataset
+  how2sign:
+    enabled: false  # Enable when dataset is downloaded
+    path: "datasets/how2sign/"
+    video_clips: "datasets/how2sign/video_clips/"
+    annotations: "datasets/how2sign/annotations/"
+  
+  # Preprocessing
+  preprocessing:
+    target_size: [224, 224]
+    normalize: true
+    augmentation: true
+    frame_sampling_rate: 3  # Sample every Nth frame
+
+# Recognition Settings
+recognition:
+  # Basic recognition
+  gesture_buffer_size: 20
+  gesture_hold_time: 1.0  # seconds
+  sentence_timeout: 3.0   # seconds
+  
+  # Sequence recognition
+  sliding_window_size: 30
+  sliding_window_step: 10
+  confidence_threshold: 0.7
+  
+  # Sign detection
+  max_sentence_length: 50
+  min_sentence_length: 3
+
+# ASL Grammar Settings
+asl_grammar:
+  enabled: true
+  word_order: "topic_comment"  # ASL typically follows topic-comment structure
+  facial_expressions: true
+  non_manual_markers: true
+  
+  # Common ASL patterns
+  common_phrases:
+    - "HELLO"
+    - "THANK YOU"
+    - "PLEASE"
+    - "SORRY"
+    - "YES"
+    - "NO"
+    - "WHAT"
+    - "WHERE"
+    - "WHEN"
+    - "WHO"
+    - "HOW"
+
+# LLM Settings
+llm:
+  model: "llama3.2:1b"
+  base_url: "http://localhost:11434"
+  timeout: 30
+  max_tokens: 500
+  temperature: 0.7
+  
+  # Context settings
+  context_window: 5  # Number of previous exchanges to consider
+  system_prompt: "You are a helpful AI assistant communicating through sign language. Respond naturally and concisely."
+
+# Response Settings
+response:
+  max_response_length: 200
+  web_search_enabled: true
+  
+  # Translation
+  translate_to_asl_grammar: true
+  simplify_responses: true
+
+# Processing Settings
+processing:
+  use_gpu: true
+  batch_size: 16
+  num_workers: 4
+  
+  # Caching
+  enable_caching: true
+  cache_dir: "cache/"
+  max_cache_size_mb: 500
+
+# Logging Settings
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  file: "logs/aslvisionbot.log"
+  console: true
+  
+  # Performance metrics
+  log_inference_time: true
+  log_frame_rate: true
+
+# UI Settings
+ui:
+  window_width: 1400
+  window_height: 900
+  theme: "Fusion"
+  
+  # Video display
+  video_width: 640
+  video_height: 480
+  show_landmarks: true
+  show_gesture_labels: true
+  
+  # Chat
+  max_messages: 100
+  auto_scroll: true
+
+# Training Settings (for model training)
+training:
+  epochs: 50
+  batch_size: 32
+  learning_rate: 0.001
+  validation_split: 0.2
+  
+  # Early stopping
+  patience: 10
+  min_delta: 0.001
+  
+  # Checkpoints
+  checkpoint_dir: "checkpoints/"
+  save_best_only: true
+  
+  # Data augmentation
+  augmentation:
+    rotation_range: 10
+    width_shift_range: 0.1
+    height_shift_range: 0.1
+    zoom_range: 0.1
+    horizontal_flip: true
+    brightness_range: [0.8, 1.2]
+
+# Advanced Features (experimental)
+experimental:
+  # Two-handed sign recognition
+  two_handed_signs: false
+  
+  # Facial expression recognition
+  facial_recognition: false
+  
+  # Body pose integration
+  body_pose: false
+  
+  # Real-time translation
+  realtime_translation: false
+  
+  # Multi-signer support
+  multi_signer: false
