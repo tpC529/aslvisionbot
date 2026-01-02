@@ -18,10 +18,27 @@ from mediapipe.tasks.python.vision import (
 from mediapipe.tasks.python.vision.core.image import Image, ImageFormat
 from collections import deque
 import time
+import logging
+
+# Try to import enhanced modules (optional for backward compatibility)
+try:
+    from src.asl_grammar import ASLInterpreter
+    from src.utils import load_config
+    ENHANCED_MODE = True
+except ImportError:
+    ENHANCED_MODE = False
+    logging.warning("Enhanced modules not available. Running in basic mode.")
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
 
 class ASLRecognizer:
-    """Handles ASL recognition using MediaPipe hand tracking"""
-    def __init__(self):
+    """Handles ASL recognition using MediaPipe hand tracking with enhanced sentence-level support"""
+    def __init__(self, config=None):
+        # Load configuration
+        self.config = config or {}
+        self.enhanced_mode = ENHANCED_MODE
+        
         # Try to find a local model bundle, otherwise download the default
         self.model_path = os.path.join(os.path.dirname(__file__), "hand_landmarker.task")
         if not os.path.exists(self.model_path):
@@ -40,11 +57,22 @@ class ASLRecognizer:
             raise RuntimeError(f"Failed to create HandLandmarker: {e}")
 
         # Buffer for gesture detection
-        self.gesture_buffer = deque(maxlen=20)
+        recognition_config = self.config.get('recognition', {})
+        buffer_size = recognition_config.get('gesture_buffer_size', 20)
+        self.gesture_buffer = deque(maxlen=buffer_size)
         self.word_buffer = []
+        self.sign_sequence = []  # For enhanced sentence tracking
         self.last_gesture_time = time.time()
         self.last_complete_time = time.time()
         self.sentence_complete = False
+        
+        # Enhanced features
+        if self.enhanced_mode:
+            self.interpreter = ASLInterpreter()
+            logging.info("ASL Vision Bot running in ENHANCED mode with sentence-level recognition")
+        else:
+            self.interpreter = None
+            logging.info("ASL Vision Bot running in BASIC mode")
         
     def process_frame(self, frame):
         """Process frame and detect hand gestures"""
@@ -91,13 +119,21 @@ class ASLRecognizer:
                 if current_time - self.last_gesture_time > 1.0:
                     if most_common == 'SPACE':
                         self.word_buffer.append(' ')
+                        # Track sign sequence for enhanced mode
+                        if self.sign_sequence:
+                            # Space indicates word boundary
+                            pass
                     elif most_common == 'DELETE' and self.word_buffer:
                         self.word_buffer.pop()
+                        if self.sign_sequence:
+                            self.sign_sequence.pop()
                     elif most_common == 'SUBMIT':
                         self.sentence_complete = True
                         self.last_complete_time = current_time
                     elif most_common != 'NONE':
                         self.word_buffer.append(most_common)
+                        # Add to sign sequence for enhanced interpretation
+                        self.sign_sequence.append(most_common)
                     
                     self.last_gesture_time = current_time
                     self.gesture_buffer.clear()
@@ -183,23 +219,42 @@ class ASLRecognizer:
     def get_and_clear_text(self):
         """Get current text and clear buffer"""
         text = ''.join(self.word_buffer)
+        
+        # Enhanced interpretation if available
+        if self.enhanced_mode and self.interpreter and self.sign_sequence:
+            try:
+                interpretation = self.interpreter.interpret_signs(self.sign_sequence)
+                if interpretation.get('english'):
+                    # Use grammatically correct English translation
+                    text = interpretation['english']
+                    logging.info(f"Enhanced interpretation: {self.sign_sequence} -> {text}")
+            except Exception as e:
+                logging.warning(f"Enhanced interpretation failed: {e}")
+        
+        # Clear buffers
         self.word_buffer.clear()
+        self.sign_sequence.clear()
         return text
+    
+    def get_sign_sequence(self):
+        """Get the current sign sequence for enhanced processing"""
+        return self.sign_sequence.copy()
     
     def clear_word(self):
         """Clear the current word buffer"""
         self.word_buffer.clear()
+        self.sign_sequence.clear()
 
 class CameraThread(QThread):
     """Thread for camera capture"""
     frame_ready = pyqtSignal(np.ndarray, str, str)
     sentence_complete = pyqtSignal(str)
     
-    def __init__(self, camera_index=0):
+    def __init__(self, camera_index=0, config=None):
         super().__init__()
         self.camera_index = camera_index
         self.running = False
-        self.asl_recognizer = ASLRecognizer()
+        self.asl_recognizer = ASLRecognizer(config=config)
         self.frame_count = 0
         self.process_interval = 3  # Process every 3 frames
     
@@ -238,10 +293,31 @@ class CameraThread(QThread):
         self.wait()
 
 class LLMHandler:
-    """Handles communication with local Ollama LLM"""
-    def __init__(self, model="llama3.2:1b"):
-        self.model = model
-        self.base_url = "http://localhost:11434"
+    """Handles communication with local Ollama LLM with enhanced ASL context awareness"""
+    def __init__(self, model="llama3.2:1b", config=None):
+        self.config = config or {}
+        llm_config = self.config.get('llm', {})
+        
+        self.model = llm_config.get('model', model)
+        self.base_url = llm_config.get('base_url', "http://localhost:11434")
+        self.timeout = llm_config.get('timeout', 30)
+        
+        # Context management
+        self.context_window = llm_config.get('context_window', 5)
+        self.conversation_history = []
+        
+        # Enhanced mode check
+        self.enhanced_mode = ENHANCED_MODE
+        if self.enhanced_mode:
+            try:
+                from src.asl_grammar import ContextManager
+                self.context_manager = ContextManager(self.context_window)
+                logging.info("LLM handler initialized with enhanced context management")
+            except ImportError:
+                self.context_manager = None
+                logging.warning("Context manager not available")
+        else:
+            self.context_manager = None
     
     def generate_response(self, prompt):
         """Generate response from LLM"""
@@ -254,7 +330,7 @@ class LLMHandler:
                 "stream": False
             }
             
-            response = requests.post(url, json=payload, timeout=30)
+            response = requests.post(url, json=payload, timeout=self.timeout)
             
             if response.status_code == 200:
                 result = response.json()
@@ -282,13 +358,31 @@ Response:"""
         response = self.generate_response(prompt).strip().upper()
         return "SEARCH" in response
     
-    def respond_to_query(self, query):
-        """Generate conversational response"""
-        prompt = f"""You are a helpful AI assistant having a conversation through sign language. Respond naturally and concisely to this message: {query}
+    def respond_to_query(self, query, context=None):
+        """Generate conversational response with optional context"""
+        # Build context-aware prompt
+        if context and self.enhanced_mode and self.context_manager:
+            context_text = self.context_manager.get_context()
+            prompt = f"""You are a helpful AI assistant having a conversation through sign language. 
+
+Previous conversation:
+{context_text}
+
+Current message (translated from ASL): {query}
+
+Respond naturally and concisely (2-3 sentences). Be aware that the input comes from sign language translation."""
+        else:
+            prompt = f"""You are a helpful AI assistant having a conversation through sign language. Respond naturally and concisely to this message: {query}
 
 Keep your response brief (2-3 sentences) and conversational."""
         
-        return self.generate_response(prompt)
+        response = self.generate_response(prompt)
+        
+        # Update context if available
+        if self.enhanced_mode and self.context_manager:
+            self.context_manager.add_exchange(query, response)
+        
+        return response
     
     def search_and_respond(self, query, search_results):
         """Generate response based on search results"""
@@ -406,8 +500,21 @@ class SearchButtonWidget(QFrame):
 class ASLChatbotApp(QMainWindow):
     def __init__(self):
         super().__init__()
+        
+        # Load configuration if available
+        try:
+            if ENHANCED_MODE:
+                from src.utils import load_config
+                self.config = load_config('config.yaml')
+                logging.info("Configuration loaded successfully")
+            else:
+                self.config = {}
+        except Exception as e:
+            logging.warning(f"Could not load config: {e}")
+            self.config = {}
+        
         self.camera_thread = None
-        self.llm_handler = LLMHandler()
+        self.llm_handler = LLMHandler(config=self.config)
         self.current_query = ""
         self.init_ui()
         
@@ -415,7 +522,9 @@ class ASLChatbotApp(QMainWindow):
         QTimer.singleShot(500, self.start_camera)
     
     def init_ui(self):
-        self.setWindowTitle("ASL Sign Language Chatbot with LLM")
+        # Set window title with mode indicator
+        mode_text = "Enhanced" if ENHANCED_MODE else "Basic"
+        self.setWindowTitle(f"ASL Sign Language Chatbot with LLM ({mode_text} Mode)")
         self.setGeometry(100, 100, 1400, 900)
         
         main_widget = QWidget()
@@ -503,32 +612,48 @@ class ASLChatbotApp(QMainWindow):
         instructions_group = QGroupBox("Quick Guide")
         instructions_layout = QVBoxLayout()
         
-        instructions = QLabel(
-            "✋ Basic Signs: A, B, L, O, V\n"
-            "🤚 Open palm down = SPACE\n"
-            "👍 Thumbs up = Submit\n"
-            "⏱️  Auto-submit after 3s pause\n"
-            "🔍 Bot suggests web search when needed"
-        )
+        # Enhanced mode adds more info
+        if ENHANCED_MODE:
+            instructions_text = (
+                "✋ Basic Signs: A, B, L, O, V\n"
+                "🤚 Open palm down = SPACE\n"
+                "👍 Thumbs up = Submit\n"
+                "⏱️  Auto-submit after 3s pause\n"
+                "🔍 Bot suggests web search when needed\n"
+                "🚀 Enhanced: Sentence-level recognition & ASL grammar"
+            )
+        else:
+            instructions_text = (
+                "✋ Basic Signs: A, B, L, O, V\n"
+                "🤚 Open palm down = SPACE\n"
+                "👍 Thumbs up = Submit\n"
+                "⏱️  Auto-submit after 3s pause\n"
+                "🔍 Bot suggests web search when needed"
+            )
+        
+        instructions = QLabel(instructions_text)
         instructions.setWordWrap(True)
         instructions.setStyleSheet("font-size: 11px; color: #555;")
         instructions_layout.addWidget(instructions)
         
         instructions_group.setLayout(instructions_layout)
-        instructions_group.setMaximumHeight(180)
+        instructions_group.setMaximumHeight(200)
         right_layout.addWidget(instructions_group)
         
         main_layout.addLayout(right_layout, 2)
         
-        # Welcome message
-        self.add_bot_message("👋 Hello! I'm your ASL chatbot. Start signing and I'll respond to your messages!")
+        # Welcome message with mode indicator
+        welcome_msg = "👋 Hello! I'm your ASL chatbot. Start signing and I'll respond to your messages!"
+        if ENHANCED_MODE:
+            welcome_msg += "\n\n✨ Running in Enhanced Mode with sentence-level recognition and ASL grammar support!"
+        self.add_bot_message(welcome_msg)
     
     def start_camera(self):
         if self.camera_thread and self.camera_thread.isRunning():
             return
             
         camera_index = self.camera_selector.currentIndex()
-        self.camera_thread = CameraThread(camera_index)
+        self.camera_thread = CameraThread(camera_index, config=self.config)
         self.camera_thread.frame_ready.connect(self.update_frame)
         self.camera_thread.sentence_complete.connect(self.process_user_input)
         self.camera_thread.start()
@@ -590,8 +715,8 @@ class ASLChatbotApp(QMainWindow):
             self.add_bot_message(response)
             self.add_search_button(self.current_query)
         else:
-            # Direct response
-            response = self.llm_handler.respond_to_query(self.current_query)
+            # Direct response with context
+            response = self.llm_handler.respond_to_query(self.current_query, context=True)
             self.add_bot_message(response)
         
         # Reset status
