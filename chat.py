@@ -27,7 +27,7 @@ try:
     ENHANCED_MODE = True
 except ImportError:
     ENHANCED_MODE = False
-    logging.warning("Enhanced modules not available. Running in basic mode.")
+    logging.warning("Enhanced modules not available. Running in Basic Mode.")
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
