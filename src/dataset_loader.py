@@ -13,6 +13,14 @@ from pathlib import Path
 from typing import List, Tuple, Dict, Optional, Union
 import logging
 
+# Conditional import for pandas (only needed for MNIST dataset)
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    pd = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -92,7 +100,10 @@ class KaggleDatasetLoader:
             logger.warning(f"Training CSV not found at {train_csv}")
             return np.array([]), np.array([]), []
         
-        import pandas as pd
+        # Check pandas availability
+        if not PANDAS_AVAILABLE:
+            logger.error("pandas is required for loading ASL MNIST dataset. Install with: pip install pandas")
+            return np.array([]), np.array([]), []
         
         df = pd.read_csv(train_csv)
         labels = df.iloc[:, 0].values

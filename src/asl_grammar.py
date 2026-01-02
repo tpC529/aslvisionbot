@@ -25,7 +25,15 @@ class ASLGrammarRules:
     - Directional verbs for spatial reference
     """
     
-    def __init__(self):
+    def __init__(self, config=None):
+        """
+        Initialize ASL Grammar Rules.
+        
+        Args:
+            config: Optional configuration dictionary with custom rules
+        """
+        config = config or {}
+        
         # Common ASL sentence structures
         self.topic_comment_indicators = ['ABOUT', 'REGARDING', 'CONCERNING']
         
@@ -57,6 +65,16 @@ class ASLGrammarRules:
             'UNDERSTAND': 'I understand / Do you understand?',
             'NOT UNDERSTAND': 'I don\'t understand'
         }
+        
+        # Configurable word lists for article insertion (simplified approach)
+        # In production, would use proper NLP (POS tagging, etc.)
+        self.nouns_requiring_article = config.get('nouns_requiring_article', [
+            'apple', 'car', 'book', 'house', 'dog', 'cat', 'phone', 'computer'
+        ])
+        
+        self.verbs_before_noun = config.get('verbs_before_noun', [
+            'see', 'want', 'need', 'have', 'like', 'love', 'eat', 'drink'
+        ])
         
         # Directional verbs (meaning changes with direction)
         self.directional_verbs = [
@@ -167,20 +185,21 @@ class ASLGrammarRules:
         """
         Add English grammar elements (articles, copulas, etc.)
         
-        This is a simplified version - full implementation would need
-        more sophisticated NLP.
+        This is a simplified heuristic-based approach.
+        Note: In production, would use proper NLP (POS tagging, dependency parsing).
+        The word lists are configurable via constructor for better flexibility.
         """
         result = []
         
         for i, word in enumerate(words):
             # Add article before nouns (simplified heuristic)
-            if i == 0 or (i > 0 and words[i-1] in ['see', 'want', 'need', 'have']):
-                if word in ['apple', 'car', 'book', 'house']:
+            if i == 0 or (i > 0 and words[i-1] in self.verbs_before_noun):
+                if word in self.nouns_requiring_article:
                     result.append('a')
             
             result.append(word)
             
-            # Add copula for simple descriptions
+            # Add copula for simple descriptions (simplified heuristic)
             if i == 0 and word in ['i', 'you', 'he', 'she', 'it', 'we', 'they']:
                 next_word = words[i+1] if i+1 < len(words) else None
                 if next_word and next_word in ['happy', 'sad', 'hungry', 'tired', 'good']:

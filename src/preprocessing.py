@@ -53,10 +53,17 @@ class VideoPreprocessor:
     
     def _adjust_sequence_length(self, frames: List[np.ndarray]) -> List[np.ndarray]:
         """Adjust sequence to target length"""
+        # Handle empty frames list
+        if not frames:
+            # Create sequence of zero frames
+            zero_frame = np.zeros((self.target_size[0], self.target_size[1], 3), dtype=np.float32 if self.normalize else np.uint8)
+            return [zero_frame] * self.sequence_length
+        
         if len(frames) < self.sequence_length:
             # Pad with last frame
+            last_frame = frames[-1]
             while len(frames) < self.sequence_length:
-                frames.append(frames[-1] if frames else np.zeros((self.target_size[0], self.target_size[1], 3)))
+                frames.append(last_frame.copy())
         elif len(frames) > self.sequence_length:
             # Sample uniformly
             indices = np.linspace(0, len(frames) - 1, self.sequence_length, dtype=int)

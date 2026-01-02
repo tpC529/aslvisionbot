@@ -198,11 +198,24 @@ class ASLSequenceModel:
     
     def load(self, filepath: str):
         """Load model from file"""
-        self.model = keras.models.load_model(
-            filepath,
-            custom_objects={'AttentionLayer': AttentionLayer}
-        )
-        logger.info(f"Model loaded from {filepath}")
+        try:
+            # Validate file exists
+            if not os.path.exists(filepath):
+                raise FileNotFoundError(f"Model file not found: {filepath}")
+            
+            # Load model
+            loaded_model = keras.models.load_model(
+                filepath,
+                custom_objects={'AttentionLayer': AttentionLayer}
+            )
+            
+            # Replace current model
+            self.model = loaded_model
+            logger.info(f"Model loaded successfully from {filepath}")
+            
+        except Exception as e:
+            logger.error(f"Failed to load model from {filepath}: {e}")
+            raise
     
     def summary(self):
         """Print model summary"""
